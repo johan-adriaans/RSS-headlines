@@ -1,0 +1,154 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+    <title>Nieuws feed</title>
+    <link href="http://netdna.bootstrapcdn.com/twitter-bootstrap/2.0.4/css/bootstrap-combined.min.css" rel="stylesheet">
+    <script src="http://ajax.googleapis.com/ajax/libs/mootools/1.4.5/mootools-yui-compressed.js"></script>
+    <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+    <script type="text/javascript">
+
+    google.load("feeds", "1");
+
+    var datemap = [];
+    var loaded = [];
+    var feeds = [];
+    var interval;
+    var refresh_count = 0;
+
+    var options = {
+      "refresh_interval": 60000,
+      "max_items": 100
+    }
+
+    function init () {
+      feeds = [
+        new google.feeds.Feed( "http://www.ad.nl/nederland/Amsterdam/rss.xml" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=10" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=1" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=132" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=130" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=129" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=131" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=2" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=9" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=3" ),
+        new google.feeds.Feed( "http://www.dichtbij.nl/rss/algemeen/nieuws.aspx?regionid=8" ),
+        new google.feeds.Feed( "http://www.gooieneemlander.nl/algemeen/binnenland/?service=rss" ),
+        new google.feeds.Feed( "http://www.haarlemsdagblad.nl/regionaal/?service=rss" ),
+        new google.feeds.Feed( "http://www.noordhollandsdagblad.nl/stadstreek/?service=rss" ),
+        new google.feeds.Feed( "http://feeds.nos.nl/nosmyheadlines" ),
+        new google.feeds.Feed( "http://feeds.nos.nl/nosnieuwsbinnenland" ),
+        new google.feeds.Feed( "http://www.nu.nl/feeds/rss/binnenland.rss" ),
+        new google.feeds.Feed( "http://www.parool.nl/amsterdam/rss.xml" ),
+        new google.feeds.Feed( "http://rss.feedsportal.com/c/585/fe.ed/www.telegraaf.nl/rss/binnenland.xml" )
+      ];
+
+      refresh(); // Initial refresh
+      interval = setInterval( refresh, options.refresh_interval );
+    }
+
+    // Helper function
+    var numpad = function ( num ) { if ( num < 10 ) return "0"+num; else return num; }
+
+    function refresh ()
+    {
+      // Inject new marker or replace existing one
+      var d = new Date();
+      var marker = new Element( "h3", {"class":"entry page-header", "text": numpad(d.getHours()) + ":" + numpad(d.getMinutes()) } );
+      if ( $("feeds").getFirst() && $("feeds").getFirst().hasClass( "page-header" ) ) {
+        marker.replaces( $("feeds").getFirst() );
+      } else {
+        marker.inject( $("feeds"), "top" );
+      }
+
+      // Parse all feeds
+      feeds.every( function ( feed ) { return parse( feed, refresh_count == 0 ); } ) ; // Only sort new entries on initial load
+      garbage_cleanup();
+      refresh_count++;
+    }
+
+    function parse(feed, sort_new_entries) {
+      feed.load(function(result) {
+        if (!result.error) {
+          var container = $("feeds");
+          result.feed.entries.each( function ( entry ) {
+            if ( entry.title && loaded.contains( entry.title ) ) return;
+
+            // Set and fix date
+            var now = new Date();
+            var date = new Date( entry.publishedDate );
+            if ( date > now ) date = now; // Some feeds push dates to the future to get articles on top :P 
+            var div = new Element("div", {"class":"entry"} );
+
+            var title = new Element("h1", {"html":entry.title});
+            if ( date ) new Element("small", {"text": numpad(date.getDate()) + "/" + numpad(date.getMonth()+1) + "/" + date.getFullYear() + " " + numpad(date.getHours()) + ":" + numpad(date.getMinutes()) } ).inject( title );
+            title.inject(div);
+
+            // inject link
+            var link_text = entry.link.length > 100 ? entry.link.substr(0, 100) + "..." : entry.link;
+            new Element("a", {"href":entry.link,"text":link_text,"target":"_blank"}).inject(div);
+            loaded.push( entry.title );
+
+            if ( sort_new_entries ) {
+              // Inject item in list based on date
+              var injected = false;
+              datemap.each( function ( v ) {
+                if ( date > v.date ) {
+                  div.inject( v.div, "before" );
+                  injected = true;
+                }
+              } );
+              if ( !injected ) div.inject( container, "bottom" );
+
+              // Push entry and re-sort datemap
+              datemap.push( {"div":div, "entry":entry, "date":date} );
+              datemap = datemap.sort( function ( a, b ) {  return a.date.getTime() - b.date.getTime(); } );
+            } else {
+              div.inject( container, "top" );
+              datemap.push( {"div":div, "entry":entry, "date":date} );
+            }
+
+            div.set( "tween", {onComplete: function() { div.setStyle("height", "auto" ); } } );
+            var h = div.getSize().y;
+            div.setStyle("height", 0);
+            div.tween( "height", h );
+          } );
+        }
+      });
+      return true;
+    }
+
+    function garbage_cleanup () {
+      // Remove older elements
+      var oversize = datemap.length - 1 - options.max_items;
+      if ( oversize > 0 ) {
+        var trash = datemap.splice( 0, oversize );
+
+        // Take out the trash
+        trash.each( function ( v, k ) {
+            v.div.set( 'tween', { onComplete: function () { v.div.destroy(); } } );
+            v.div.fade('out');
+          }
+        );
+
+        // Clean up trailing page-headers
+        if ( $("feeds").getLast() && $("feeds").getLast().hasClass( "page-header" ) ) $("feeds").getLast().destroy();
+      }
+    }
+
+    google.setOnLoadCallback(init);
+    </script>
+    <style type="text/css">
+      body {margin: 20px 0 0 20px; background: #272822; color: #E1F0F2; text-align: center; }
+      a, a:hover { color: #CA0155; }
+      .entry { margin: 15px 0; overflow: hidden; }
+      .page-header { border-bottom: 1px solid #444; }
+      small { margin-left: 10px; color: #747050; }
+    </style>
+  </head>
+  <body>
+    <div id="feeds"></div>
+  </body>
+</html>
